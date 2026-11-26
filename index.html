@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Laboratorio semana 14 · Recorrido inmersivo 360°</title>
+
+  <!-- A-Frame 1.8.0 (CDN). Si no hay internet, coloque aframe.min.js en js/ y se usa como respaldo. -->
+  <script src="https://aframe.io/releases/1.8.0/aframe.min.js"></script>
+  <script>window.AFRAME || document.write('<script src="js/aframe.min.js"><\/script>');</script>
+
+  <script>
+    /* ------------------------------------------------------------------
+       Componente 1 · texto-canvas
+       Dibuja texto (con tildes) en un <canvas> de HTML5 y lo usa como
+       textura de un plano. No depende de fuentes externas.
+       ------------------------------------------------------------------ */
+    AFRAME.registerComponent('texto-canvas', {
+      schema: {
+        titulo: { type: 'string', default: '' },
+        texto: { type: 'string', default: '' },
+        ancho: { type: 'number', default: 1.6 },   // metros
+        alto: { type: 'number', default: 0.9 },    // metros
+        fondo: { type: 'color', default: '#FAF4E6' },
+        tinta: { type: 'color', default: '#3B2A1A' },
+        acento: { type: 'color', default: '#B4441C' },
+        siempreVisible: { type: 'boolean', default: false }  // para el HUD
+      },
+
+      init: function () {
+        this.canvas = document.createElement('canvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.textura = new THREE.CanvasTexture(this.canvas);
+        this.textura.colorSpace = THREE.SRGBColorSpace;
+        this.material = new THREE.MeshBasicMaterial({
+          map: this.textura, transparent: true, side: THREE.DoubleSide, toneMapped: false
+        });
+        this.malla = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), this.material);
+        this.el.setObject3D('mesh', this.malla);
+      },
+
+      update: function () {
+        const d = this.data;
+        const PX = 1024;
+        this.canvas.width = PX;
+        this.canvas.height = Math.round(PX * d.alto / d.ancho);
+        this.malla.geometry.dispose();
+        this.malla.geometry = new THREE.PlaneGeometry(d.ancho, d.alto);
+        if (d.siempreVisible) {
+          this.material.depthTest = false;
+          this.malla.renderOrder = 999;
+        }
+        this.dibujar();
+      },
+
+      // Parte el texto en lineas que quepan en 'maxAncho' pixeles.
+      lineas: function (texto, maxAncho) {
+        const ctx = this.ctx;
+        const palabras = String(texto).split(/\s+/).filter(Boolean);
+        const res = [];
+        let linea = '';
+        palabras.forEach(function (pal) {
+          const prueba = linea ? linea + ' ' + pal : pal;
+          if (ctx.measureText(prueba).width > maxAncho && linea) {
+            res.push(linea);
+            linea = pal;
+          } else {
+            linea = prueba;
+          }
+        });
+        if (linea) res.push(linea);
+        return res;
+      },
+
+      dibujar: function () {
+        const d = this.data, ctx = this.ctx, W = this.canvas.width, H = this.canvas.height;
+        const margen = H * 0.08;
+        const FUENTE = 'system-ui, "Segoe UI", Roboto, Arial, sans-serif';
+
+        ctx.clearRect(0, 0, W, H);
+
+        // tarjeta redondeada
+        const r = H * 0.1;
+        ctx.beginPath();
+        ctx.moveTo(r, 0); ctx.lineTo(W - r, 0); ctx.quadraticCurveTo(W, 0, W, r);
+        ctx.lineTo(W, H - r); ctx.quadraticCurveTo(W, H, W - r, H);
+        ctx.lineTo(r, H); ctx.quadraticCurveTo(0, H, 0, H - r);
+        ctx.lineTo(0, r); ctx.quadraticCurveTo(0, 0, r, 0);
+        ctx.closePath();
+        ctx.fillStyle = d.fondo;
+        ctx.globalAlpha = 0.95;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.lineWidth = H * 0.025;
+        ctx.strokeStyle = d.acento;
+        ctx.stroke();
+
+        ctx.textBaseline = 'top';
+        ctx.textAlign = 'left';
+        let y = margen;
+
+        if (d.titulo) {
+          const tam = H * 0.13;
+          ctx.font = 'bold ' + tam + 'px ' + FUENTE;
+          ctx.fillStyle = d.acento;
+          ctx.fillText(d.titulo, margen, y, W - margen * 2 - H * 0.12);
+          y += tam * 1.5;
+        }
+
+        // el texto se reduce hasta que quepa en el espacio disponible
+        const disponible = H - y - margen;
+        let tam = H * (d.titulo ? 0.085 : 0.4);
+        let ls;
+        for (;;) {
+          ctx.font = tam + 'px ' + FUENTE;
+          ls = this.lineas(d.texto, W - margen * 2);
+          if (ls.length * tam * 1.3 <= disponible || tam < 14) break;
+          tam -= 2;
+        }
+        ctx.fillStyle = d.tinta;
+        if (!d.titulo) {            // sin titulo: se centra (HUD)
+          ctx.textAlign = 'center';
+          y = margen + Math.max(0, (disponible - ls.length * tam * 1.3) / 2);
+          ls.forEach(function (l, i) { ctx.fillText(l, W / 2, y + i * tam * 1.3); });
+        } else {
+          ls.forEach(function (l, i) { ctx.fillText(l, margen, y + i * tam * 1.3); });
+        }
+        this.textura.needsUpdate = true;
+      },
+
+      remove: function () {
+        this.el.removeObject3D('mesh');
+        this.textura.dispose();
+        this.material.dispose();
+      }
+    });
+
+    /* ------------------------------------------------------------------
+       Componente 2 · mirar-al-centro
+       Orienta la entidad hacia el visitante (0, 1.6, 0).
+       ------------------------------------------------------------------ */
+    AFRAME.registerComponent('mirar-al-centro', {
+      init: function () { this.destino = new THREE.Vector3(0, 1.6, 0); },
+      update: function () { this.el.object3D.lookAt(this.destino); }
+    });
+
+    /* ------------------------------------------------------------------
+       Componente 3 · recorrido
+       Carga puntos.json con fetch() y crea un punto por cada elemento.
+       ------------------------------------------------------------------ */
+    AFRAME.registerComponent('recorrido', {
+      schema: { datos: { type: 'string', default: 'puntos.json' } },
+
+      init: function () {
+        this.hud = document.querySelector('#hud');
+        this.panel = document.querySelector('#panel');
+        this.cerrar = document.querySelector('#cerrar');
+        this.visitados = new Set();
+        this.total = 0;
+
+        // Boton X: oculta el panel y deja de ser "clicable" para el cursor
+        this.cerrar.addEventListener('click', () => {
+          this.panel.setAttribute('visible', false);
+          this.cerrar.classList.remove('clicable');
+        });
+        this.cerrar.addEventListener('mouseenter', () => this.cerrar.setAttribute('material', 'color', '#E0602F'));
+        this.cerrar.addEventListener('mouseleave', () => this.cerrar.setAttribute('material', 'color', '#B4441C'));
+
+        // B1 · cargar los datos con fetch()
+        fetch(this.data.datos)
+          .then(respuesta => {
+            if (!respuesta.ok) throw new Error('HTTP ' + respuesta.status);
+            return respuesta.json();
+          })
+          .then(puntos => {
+            this.total = puntos.length;
+            puntos.forEach(p => this.crearPunto(p));
+            this.actualizarHud();
+          })
+          .catch(error => this.hud.setAttribute('texto-canvas', { titulo: 'Error', texto: error.message }));
+      },
+
+      // B2 · crear cada punto desde JavaScript
+      crearPunto: function (p) {
+        const punto = document.createElement('a-entity');
+        punto.setAttribute('id', 'punto-' + p.id);
+        punto.setAttribute('class', 'clicable');
+        punto.setAttribute('position', p.posicion);                 // {x, y, z} del JSON
+        punto.setAttribute('geometry', { primitive: 'circle', radius: 0.32 });
+        punto.setAttribute('material', { color: '#B4441C', shader: 'flat', opacity: 0.9, transparent: true });
+        punto.setAttribute('mirar-al-centro', '');
+        punto.setAttribute('animation__latido', {
+          property: 'scale', from: '1 1 1', to: '1.2 1.2 1.2',
+          dur: 800, dir: 'alternate', loop: true, easing: 'easeInOutSine'
+        });
+        punto.addEventListener('click', () => this.mostrarPanel(p, punto));
+        this.el.appendChild(punto);
+      },
+
+      // C1 y C2 · mostrar la informacion y marcar como visitado
+      mostrarPanel: function (p, punto) {
+        const pos = p.posicion;
+        // al 40 % de la distancia del punto, a la altura de los ojos
+        this.panel.object3D.position.set(pos.x * 0.4, 1.6 + (pos.y - 1.6) * 0.4, pos.z * 0.4);
+        this.panel.object3D.lookAt(new THREE.Vector3(0, 1.6, 0));
+        this.panel.setAttribute('texto-canvas', { titulo: p.titulo, texto: p.descripcion });
+        this.panel.setAttribute('visible', true);
+        this.cerrar.classList.add('clicable');
+
+        // marcar como visitado
+        this.visitados.add(p.id);
+        punto.setAttribute('material', 'color', '#1E7A4C');
+        this.actualizarHud();
+      },
+
+      actualizarHud: function () {
+        const n = this.visitados.size, t = this.total;
+        const texto = (n === t && t > 0)
+          ? '¡Recorrido completo! Puntos visitados: ' + n + ' de ' + t
+          : 'Puntos visitados: ' + n + ' de ' + t;
+        this.hud.setAttribute('texto-canvas', { titulo: '', texto: texto });
+      }
+    });
+  </script>
+
+  <style>
+    .a-enter-vr-button { z-index: 999; }
+  </style>
+</head>
+
+<body>
+  <a-scene vr-mode-ui="enabled: true" device-orientation-permission-ui="enabled: true">
+
+    <a-assets>
+      <!-- Panorama equirectangular (proporcion 2:1). Para su proyecto: cambie este src. -->
+      <img id="panorama" src="assets/panorama.jpg" crossorigin="anonymous">
+      <!-- Modelo 3D (.glb). Para su proyecto: assets/sumodelo.glb -->
+      <a-asset-item id="taza" src="assets/taza.glb"></a-asset-item>
+    </a-assets>
+
+    <!-- A1 · El cielo con la foto: el CENTRO de la imagen queda al frente -->
+    <a-sky src="#panorama" rotation="0 -90 0"></a-sky>
+
+    <!-- Luces para el modelo 3D -->
+    <a-entity light="type: ambient; intensity: 0.9; color: #FFFFFF"></a-entity>
+    <a-entity light="type: directional; intensity: 0.8; color: #FFF3DC" position="2 4 2"></a-entity>
+
+    <!-- Camara a la altura de los ojos -->
+    <a-entity camera look-controls="touchEnabled: true; magicWindowTrackingEnabled: true" position="0 1.6 0">
+
+      <!-- A2 · Cursor de mirada (fuse) -->
+      <a-entity cursor="fuse: true; fuseTimeout: 1500" raycaster="objects: .clicable; far: 20"
+                position="0 0 -1" geometry="primitive: ring; radiusInner: 0.015; radiusOuter: 0.025"
+                material="color: #FFFFFF; shader: flat"
+                animation__llenando="property: scale; startEvents: fusing; from: 1 1 1; to: 0.4 0.4 0.4; dur: 1500"
+                animation__suelta="property: scale; startEvents: mouseleave; to: 1 1 1; dur: 150">
+      </a-entity>
+
+      <!-- HUD: indicador de avance (hijo de la camara, siempre abajo) -->
+      <a-entity id="hud" position="0 -0.42 -1.2"
+                texto-canvas="texto: Cargando puntos...; ancho: 1.0; alto: 0.17; siempreVisible: true"></a-entity>
+    </a-entity>
+
+    <!-- Panel de informacion (oculto hasta que se mira un punto) -->
+    <a-entity id="panel" visible="false" texto-canvas="titulo: Titulo; texto: Descripcion; ancho: 1.6; alto: 0.9">
+      <!-- boton cerrar (X) -->
+      <a-entity id="cerrar" position="0.72 0.37 0.02"
+                geometry="primitive: circle; radius: 0.07" material="color: #B4441C; shader: flat">
+        <a-plane width="0.09" height="0.014" position="0 0 0.005" rotation="0 0 45" material="color: #FFFFFF; shader: flat"></a-plane>
+        <a-plane width="0.09" height="0.014" position="0 0 0.005" rotation="0 0 -45" material="color: #FFFFFF; shader: flat"></a-plane>
+      </a-entity>
+    </a-entity>
+
+    <!-- B · Los puntos se crean desde JavaScript con los datos de puntos.json -->
+    <a-entity id="mundo" recorrido="datos: puntos.json"></a-entity>
+
+    <!-- C3 · Modelo 3D interactivo sobre un pedestal -->
+    <a-entity position="1.9 0 -1.1">
+      <a-cylinder radius="0.35" height="0.9" position="0 0.45 0" color="#F2E8D5"></a-cylinder>
+      <a-entity class="clicable" gltf-model="#taza" position="0 0.95 0" scale="0.3 0.3 0.3"
+                animation__gira="property: rotation; from: 0 0 0; to: 0 360 0; dur: 1500; startEvents: click"
+                animation__entra="property: scale; to: 0.36 0.36 0.36; dur: 200; startEvents: mouseenter"
+                animation__sale="property: scale; to: 0.3 0.3 0.3; dur: 200; startEvents: mouseleave">
+      </a-entity>
+    </a-entity>
+  </a-scene>
+</body>
+</html>

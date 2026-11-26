@@ -1,0 +1,2 @@
+Opcional (sin internet): descargue https://aframe.io/releases/1.8.0/aframe.min.js
+y guárdelo aquí como js/aframe.min.js. index.html lo usa solo si el CDN no carga.

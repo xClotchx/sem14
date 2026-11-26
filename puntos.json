@@ -1,0 +1,50 @@
+[
+  {
+    "id": "entrada",
+    "titulo": "Entrada",
+    "descripcion": "Bienvenido al Cafetal Mirador. Aqui empieza el recorrido: saludamos con una taza de cafe de la casa.",
+    "yaw": 0.0,
+    "pitch": 8.0,
+    "posicion": {
+      "x": 0.0,
+      "y": 2.435,
+      "z": -5.942
+    }
+  },
+  {
+    "id": "mostrador",
+    "titulo": "Mostrador",
+    "descripcion": "Aqui preparamos el cafe de especialidad: espresso, filtrado y cold brew. Pregunte por el cafe del dia.",
+    "yaw": 60.0,
+    "pitch": 5.0,
+    "posicion": {
+      "x": 5.178,
+      "y": 2.124,
+      "z": -2.986
+    }
+  },
+  {
+    "id": "mirador",
+    "titulo": "Mirador",
+    "descripcion": "Vista panoramica a las montanas de Chiriqui. El mejor lugar para fotos al atardecer.",
+    "yaw": -75.0,
+    "pitch": 15.0,
+    "posicion": {
+      "x": -5.597,
+      "y": 3.156,
+      "z": -1.503
+    }
+  },
+  {
+    "id": "cafetal",
+    "titulo": "Cafetal",
+    "descripcion": "Recorra nuestras plantas de cafe y conozca el proceso desde la cereza hasta la taza.",
+    "yaw": 150.0,
+    "pitch": 0.0,
+    "posicion": {
+      "x": 2.997,
+      "y": 1.6,
+      "z": 5.198
+    }
+  }
+]
